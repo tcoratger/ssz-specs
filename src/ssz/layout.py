@@ -30,10 +30,8 @@ def _pack_bytes(data: bytes) -> list[bytes]:
         padded   :  01 02 03 04 05 00 00 ... 00     (zero-padded to 32 bytes)
         chunks   :  [ 01 02 03 04 05 00 ... 00 ]
 
-    Only the trailing chunk is padded, and padding a full one returns it unchanged.
-    Every chunk is therefore exactly 32 bytes.
-
-    They are plain bytes rather than a typed array, nothing reading them but a hash.
+    Only the trailing chunk is padded, so every chunk is exactly 32 bytes.
+    They are plain bytes, nothing reading them but a hash.
     """
     return [
         data[i : i + BYTES_PER_CHUNK].ljust(BYTES_PER_CHUNK, b"\x00")
@@ -80,7 +78,6 @@ def _pack_basic_elements(elements: Sequence[int], element_size: int) -> list[byt
         chunks  :  [ 01 00 02 00 03 00 00 ... 00 ]
 
     Invariant: the width is the declared element type's, coerced on the way in.
-    Little-endian is written out rather than read from the host.
     """
     if element_size == 1:
         return _pack_bytes(bytes(elements))
@@ -92,8 +89,6 @@ def _pack_basic_elements(elements: Sequence[int], element_size: int) -> list[byt
 class MerkleLayout:
     """
     The subtree one value merkleizes into, before any of it is hashed.
-
-    Every shape reaches its root the same way, in the three steps below.
 
         shape                 leaves               tree                        mixed in
         Container             fields               bounded by the field count  -
@@ -108,18 +103,16 @@ class MerkleLayout:
 
     packed: tuple[bytes, ...]
     """
-    Leaves as data, for a shape whose elements pack into chunks.
+    Leaves as data, where elements share a chunk with their neighbours.
 
-    An element of such a shape shares its chunk with its neighbours.
-    The chunk is therefore the leaf, and nothing below it can be addressed.
-    Empty when the shape nests values instead.
+    The chunk is the leaf, so nothing below it can be addressed.
     """
 
     nested: tuple[SSZType | None, ...] | None
     """
     Leaves as values, one root each, or None for a shape that packs instead.
 
-    A position carrying no value holds nothing, which merkleizes as a zero leaf.
+    A position carrying no value merkleizes as a zero leaf.
     """
 
     limit: int | None
@@ -297,21 +290,15 @@ def progressive_container_plan(
     """
     Which field sits at each position of a progressive layout, and the word mixed in.
 
-    One entry per position, naming the field that sits there, or None for a gap.
-    Neither answer reads the value, so both are worked out once per layout.
-
-    Keyed by the layout, never by the type that declares it.
-    A layout can be rewritten after declaration.
-    A key naming the type would answer with the layout it used to have.
-    A value that has already rooted keeps the root it took.
+    One entry per position, naming the field there, or None for a gap.
+    Keyed by the layout rather than the type, since a layout can be rewritten afterwards.
 
     Raises:
         SSZTypeError: A layout that does not pair with the fields one to one.
     """
     positions: list[str | None] = [None] * len(active_fields)
     active_positions = [position for position, bit in enumerate(active_fields) if bit]
-    # The declaration checks this pairing too, and a reassigned layout arrives unchecked.
-    # So the layout rides along, since the declared one is no longer the one in force.
+    # The layout rides along, since a reassigned one is no longer the declared one.
     if len(active_positions) != len(field_names):
         raise SSZTypeError(
             TypeFault.LAYOUT_FIELD_COUNT,
@@ -330,7 +317,6 @@ def field_names(cls: type[SSZModel]) -> tuple[str, ...]:
     """
     Every field name, in the declaration order that is the canonical SSZ field order.
 
-    Cached because reading the model's mapping goes through a property.
-    A layout wants the names twice: to read the fields, and to size the tree.
+    Cached because a layout wants them twice, and the model's mapping is a property.
     """
     return tuple(cls.model_fields)
